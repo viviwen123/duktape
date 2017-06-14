@@ -743,7 +743,7 @@ DUK_INTERNAL duk_ret_t duk_bi_object_constructor_keys_shared(duk_context *ctx) {
 	DUK_ASSERT(magic >= 0 && magic < (duk_int_t) (sizeof(duk__object_keys_enum_flags) / sizeof(duk_small_uint_t)));
 	enum_flags = duk__object_keys_enum_flags[magic];
 
-	duk_proxy_ownkeys_postprocess(ctx, h_proxy_target, enum_flags);
+	duk_proxy_ownkeys_postprocess(ctx, (duk_hproxy *) obj, enum_flags);
 	return 1;
 
  skip_proxy:

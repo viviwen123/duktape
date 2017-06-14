@@ -1633,6 +1633,56 @@ DUK_LOCAL duk_bool_t duk__get_own_propdesc_raw(duk_hthread *thr, duk_hobject *ob
 	out_desc->h_idx = -1;
 	out_desc->a_idx = -1;
 
+	/* FIXME: property descriptor helpers would need to be reworked
+	 * so that both object and duk_propdesc outputs are supported.
+	 */
+#if defined(DUK_USE_ES6_PROXY)
+	if (DUK_UNLIKELY(DUK_HOBJECT_IS_PROXY(obj))) {
+		duk_hproxy *h_proxy;
+		duk_hobject *h_target;
+		duk_tval tv_key;
+
+		DUK_TVAL_SET_STRING(&tv_key, key);
+		if (duk__proxy_check_prop(thr, obj, DUK_STRIDX_GET_OWN_PROPERTY_DESCRIPTOR, &tv_key, &h_target)) {
+			duk_push_hobject(ctx, h_target);  /* target */
+			duk_push_hstring(ctx, key);       /* P */
+			duk_call_method(ctx, 2 /*nargs*/);
+
+			/* FIXME: validate descriptor, convert it to internal form.
+			 * At present out_desc->get etc are borrowed so value, get,
+			 * set must be scrubbed, leaving only attributes behind which
+			 * is fine for now.
+			 */
+			/* FIXME: arguments special */
+
+			if (duk_get_prop_stridx_boolean(ctx, -1, DUK_STRIDX_WRITABLE, NULL)) {
+				out_desc->flags |= DUK_PROPDESC_FLAG_WRITABLE;
+			}
+			if (duk_get_prop_stridx_boolean(ctx, -1, DUK_STRIDX_ENUMERABLE, NULL)) {
+				out_desc->flags |= DUK_PROPDESC_FLAG_ENUMERABLE;
+			}
+			if (duk_get_prop_stridx_boolean(ctx, -1, DUK_STRIDX_CONFIGURABLE, NULL)) {
+				out_desc->flags |= DUK_PROPDESC_FLAG_ENUMERABLE;
+			}
+			out_desc->flags |= DUK_PROPDESC_FLAG_VIRTUAL;
+
+			if (flags & DUK_GETDESC_FLAG_PUSH_VALUE) {
+				duk_get_prop_stridx(ctx, -1, DUK_STRIDX_VALUE);
+				duk_remove_m2(ctx);
+			} else {
+				duk_pop(ctx);
+			}
+
+			return 1;
+		}
+
+		DUK_D(DUK_DPRINT("getting own property descriptor for Proxy"));
+		h_proxy = (duk_hproxy *) obj;
+		DUK_ASSERT(h_proxy->target != NULL);
+		obj = h_proxy->target;
+	}
+#endif  /* DUK_USE_ES6_PROXY */
+
 	/*
 	 *  Array part
 	 */
@@ -3768,6 +3818,7 @@ DUK_INTERNAL duk_bool_t duk_hobject_putprop(duk_hthread *thr, duk_tval *tv_obj, 
 		goto fail_not_writable;
 	}
 #endif
+	/* FIXME: add explicit virtual property safety check */
 
 	/* Although there are writable virtual properties (e.g. plain buffer
 	 * and buffer object number indices), they are handled before we come
@@ -4871,6 +4922,7 @@ void duk_hobject_prepare_property_descriptor(duk_context *ctx,
 		idx_value = duk_get_top_index(ctx);
 	}
 
+	/* FIXME: some overlap here */
 	if (duk_get_prop_stridx(ctx, idx_in, DUK_STRIDX_WRITABLE)) {
 		is_data_desc = 1;
 		if (duk_to_boolean(ctx, -1)) {
@@ -5014,6 +5066,10 @@ duk_bool_t duk_hobject_define_property_helper(duk_context *ctx,
 
 	DUK_ASSERT_VALSTACK_SPACE(thr, DUK__VALSTACK_SPACE);
 
+	/* FIXME: maybe add defineProperty trap at the same time, so that only
+	 * non-Proxy objects come here?
+	 */
+
 	/* All the flags fit in 16 bits, so will fit into duk_bool_t. */
 
 	has_writable = (defprop_flags & DUK_DEFPROP_HAVE_WRITABLE);
@@ -5048,6 +5104,21 @@ duk_bool_t duk_hobject_define_property_helper(duk_context *ctx,
 	                     (long) has_get, (void *) get, (duk_heaphdr *) get,
 	                     (long) has_set, (void *) set, (duk_heaphdr *) set,
 	                     (long) arr_idx, (long) throw_flag));
+
+	/*
+	 *  Proxy objects.
+	 */
+
+#if defined(DUK_USE_ES6_PROXY)
+	if (DUK_UNLIKELY(DUK_HOBJECT_IS_PROXY(obj))) {
+		duk_hproxy *h_proxy;
+
+		h_proxy = (duk_hproxy *) obj;
+		obj = h_proxy->target;
+		DUK_ASSERT(obj != NULL);
+		DUK_ASSERT(!DUK_HOBJECT_IS_PROXY(obj));
+	}
+#endif  /* DUK_USE_ES6_PROXY */
 
 	/*
 	 *  Array exotic behaviors can be implemented at this point.  The local variables
