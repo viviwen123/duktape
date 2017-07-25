@@ -1668,13 +1668,20 @@ DUK_LOCAL duk_bool_t duk__get_own_propdesc_raw(duk_hthread *thr, duk_hobject *ob
 	DUK_ASSERT(out_desc != NULL);
 	DUK_ASSERT_VALSTACK_SPACE(thr, DUK__VALSTACK_SPACE);
 
-	/* XXX: optimize this filling behavior later */
+	/* Each code path returning 1 (= found) must fill in all the output
+	 * descriptor fields.  We don't do it beforehand because it'd be
+	 * unnecessary work if the property isn't found and would happen
+	 * multiple times for an inheritance chain.
+	 */
+	DUK_ASSERT_SET_GARBAGE(out_desc, sizeof(*out_desc));
+#if 0
 	out_desc->flags = 0;
 	out_desc->get = NULL;
 	out_desc->set = NULL;
 	out_desc->e_idx = -1;
 	out_desc->h_idx = -1;
 	out_desc->a_idx = -1;
+#endif
 
 	/*
 	 *  Try entries part first because it's the common case.
@@ -1687,7 +1694,10 @@ DUK_LOCAL duk_bool_t duk__get_own_propdesc_raw(duk_hthread *thr, duk_hobject *ob
 	duk_hobject_find_existing_entry(thr->heap, obj, key, &out_desc->e_idx, &out_desc->h_idx);
 	if (out_desc->e_idx >= 0) {
 		duk_int_t e_idx = out_desc->e_idx;
+		out_desc->a_idx = -1;
 		out_desc->flags = DUK_HOBJECT_E_GET_FLAGS(thr->heap, obj, e_idx);
+		out_desc->get = NULL;
+		out_desc->set = NULL;
 		if (DUK_UNLIKELY(out_desc->flags & DUK_PROPDESC_FLAG_ACCESSOR)) {
 			DUK_DDD(DUK_DDDPRINT("-> found accessor property in entry part"));
 			out_desc->get = DUK_HOBJECT_E_GET_VALUE_GETTER(thr->heap, obj, e_idx);
@@ -1724,6 +1734,10 @@ DUK_LOCAL duk_bool_t duk__get_own_propdesc_raw(duk_hthread *thr, duk_hobject *ob
 				out_desc->flags = DUK_PROPDESC_FLAG_WRITABLE |
 				                  DUK_PROPDESC_FLAG_CONFIGURABLE |
 				                  DUK_PROPDESC_FLAG_ENUMERABLE;
+				out_desc->get = NULL;
+				out_desc->set = NULL;
+				out_desc->e_idx = -1;
+				out_desc->h_idx = -1;
 				out_desc->a_idx = arr_idx;
 				goto prop_found;
 			}
@@ -1760,6 +1774,11 @@ DUK_LOCAL duk_bool_t duk__get_own_propdesc_raw(duk_hthread *thr, duk_hobject *ob
 			if (DUK_HARRAY_LENGTH_WRITABLE(a)) {
 				out_desc->flags |= DUK_PROPDESC_FLAG_WRITABLE;
 			}
+			out_desc->get = NULL;
+			out_desc->set = NULL;
+			out_desc->e_idx = -1;
+			out_desc->h_idx = -1;
+			out_desc->a_idx = -1;
 
 			DUK_ASSERT(!DUK_HOBJECT_HAS_EXOTIC_ARGUMENTS(obj));
 			return 1;  /* cannot be arguments exotic */
@@ -1785,6 +1804,11 @@ DUK_LOCAL duk_bool_t duk__get_own_propdesc_raw(duk_hthread *thr, duk_hobject *ob
 				}
 				out_desc->flags = DUK_PROPDESC_FLAG_ENUMERABLE |  /* E5 Section 15.5.5.2 */
 				                  DUK_PROPDESC_FLAG_VIRTUAL;
+				out_desc->get = NULL;
+				out_desc->set = NULL;
+				out_desc->e_idx = -1;
+				out_desc->h_idx = -1;
+				out_desc->a_idx = -1;
 
 				DUK_ASSERT(!DUK_HOBJECT_HAS_EXOTIC_ARGUMENTS(obj));
 				return 1;  /* cannot be e.g. arguments exotic, since exotic 'traits' are mutually exclusive */
@@ -1803,6 +1827,11 @@ DUK_LOCAL duk_bool_t duk__get_own_propdesc_raw(duk_hthread *thr, duk_hobject *ob
 				duk_push_uint(thr, (duk_uint_t) DUK_HSTRING_GET_CHARLEN(h_val));
 			}
 			out_desc->flags = DUK_PROPDESC_FLAG_VIRTUAL;  /* E5 Section 15.5.5.1 */
+			out_desc->get = NULL;
+			out_desc->set = NULL;
+			out_desc->e_idx = -1;
+			out_desc->h_idx = -1;
+			out_desc->a_idx = -1;
 
 			DUK_ASSERT(!DUK_HOBJECT_HAS_EXOTIC_ARGUMENTS(obj));
 			return 1;  /* cannot be arguments exotic */
@@ -1847,6 +1876,11 @@ DUK_LOCAL duk_bool_t duk__get_own_propdesc_raw(duk_hthread *thr, duk_hobject *ob
 					 */
 					out_desc->flags |= DUK_PROPDESC_FLAG_ENUMERABLE;
 				}
+				out_desc->get = NULL;
+				out_desc->set = NULL;
+				out_desc->e_idx = -1;
+				out_desc->h_idx = -1;
+				out_desc->a_idx = -1;
 
 				DUK_ASSERT(!DUK_HOBJECT_HAS_EXOTIC_ARGUMENTS(obj));
 				return 1;  /* cannot be e.g. arguments exotic, since exotic 'traits' are mutually exclusive */
@@ -1864,6 +1898,11 @@ DUK_LOCAL duk_bool_t duk__get_own_propdesc_raw(duk_hthread *thr, duk_hobject *ob
 				duk_push_uint(thr, h_bufobj->length >> h_bufobj->shift);
 			}
 			out_desc->flags = DUK_PROPDESC_FLAG_VIRTUAL;
+			out_desc->get = NULL;
+			out_desc->set = NULL;
+			out_desc->e_idx = -1;
+			out_desc->h_idx = -1;
+			out_desc->a_idx = -1;
 
 			DUK_ASSERT(!DUK_HOBJECT_HAS_EXOTIC_ARGUMENTS(obj));
 			return 1;  /* cannot be arguments exotic */
